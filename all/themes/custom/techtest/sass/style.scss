@@ -1,0 +1,22 @@
+// Compass
+@import "compass/css3";
+@import "compass/utilities";
+
+// Import Bootstrap Compass integration
+@import "bootstrap-compass";
+
+// Import Bootstrap for Sass
+@import 'bootstrap';
+
+#techtest-credit-card-form fieldset {
+  border: none;
+}
+
+#techtest-credit-card-form fieldset.panel {
+  -webkit-box-shadow: none;
+  box-shadow: none;
+}
+
+label.error, .techtest-credit-card-form-errors {
+  color: red;
+}

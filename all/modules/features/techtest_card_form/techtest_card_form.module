@@ -1,0 +1,302 @@
+<?php
+/**
+ * @file
+ * Code for the techtest Card Form feature.
+ */
+
+include_once 'techtest_card_form.features.inc';
+/**
+ * @file
+ * Techtest Credit Card form module.
+ */
+
+/**
+ * Implements hook_menu().
+ *
+ * Note: I wouldn't normally do a hook_menu for something as trivial as this,
+ * however, exporting the url alias of a node requires a patch on the uuid
+ * module and this just seemed simpler for the requirements and time allowed.
+ * I have included the uuid content feature and the relevant patch so you could
+ * see what I would have done instead.
+ */
+function techtest_card_form_menu() {
+  return array(
+    'techtestpayment' => array(
+      'title' => 'Tech Test Payment',
+      'page callback' => 'techtest_payment_page',
+      'access callback' => TRUE,
+      'type' => MENU_NORMAL_ITEM,
+    ),
+  );
+}
+
+/**
+ * Placeholder callback to satisfy the brief.
+ *
+ * @return string
+ *   Return empty string to render the page
+ */
+function techtest_payment_page() {
+  return '';
+}
+
+/**
+ * Implements hook_block_info().
+ */
+function techtest_card_form_block_info() {
+  $blocks['card_form'] = array(
+    'info' => t('Card Form'),
+  );
+  return $blocks;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function techtest_card_form_block_view($delta = '') {
+  $block = array();
+
+  switch ($delta) {
+    case 'card_form':
+      $block['subject'] = '';
+      $block['content'] = drupal_get_form('techtest_credit_card_form');
+      break;
+  }
+  return $block;
+}
+
+/**
+ * FAPI implementation for the credit card form.
+ *
+ * @param array $form
+ *   Form api array.
+ * @param array $form_state
+ *   Form state array.
+ *
+ * @return mixed
+ *   Form array for render.
+ */
+function techtest_credit_card_form($form, &$form_state) {
+
+  $form['left'] = array(
+    '#type' => 'fieldset',
+    '#attributes' => array('class' => array('col-md-4')),
+  );
+
+  $form['left']['select_payment'] = array(
+    '#title' => t('Payment Type'),
+    '#type' => 'radios',
+    '#options' => array(
+      'credit' => 'Credit Card',
+      'voucher' => 'Voucher',
+    ),
+    '#required' => TRUE,
+  );
+
+  $form['right'] = array(
+    '#type' => 'fieldset',
+    '#attributes' => array('class' => array('col-md-8')),
+  );
+
+  $form['right']['name'] = array(
+    '#type' => 'textfield',
+    '#required' => TRUE,
+    '#title' => t('Name'),
+  );
+
+  $form['right']['credit_card_fields'] = array(
+    '#type' => 'fieldset',
+    '#states' => array(
+      'visible' => array(
+        ':input[name="select_payment"]' => array(
+          'value' => 'credit',
+        ),
+      ),
+    ),
+  );
+
+  $form['right']['credit_card_fields']['credit_card_number'] = array(
+    '#type' => 'textfield',
+    '#title' => 'Credit Card Number',
+    '#maxlength' => 16,
+    '#element_validate' => array('techtest_card_cardnumber_validate'),
+  );
+
+  $form['right']['credit_card_fields']['credit_card_cvv'] = array(
+    '#type' => 'textfield',
+    '#title' => 'CVV Code',
+    '#maxlength' => 3,
+    '#description' => 'Your 3 digit security code on the back of your card.',
+    '#element_validate' => array('techtest_cvv_validate'),
+  );
+
+  $form['right']['voucher_fields'] = array(
+    '#type' => 'fieldset',
+    '#states' => array(
+      'visible' => array(
+        ':input[name="select_payment"]' => array(
+          'value' => 'voucher',
+        ),
+      ),
+    ),
+  );
+
+  $form['right']['voucher_fields']['voucher_number'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Voucher Number'),
+  );
+
+  $form['right']['submit'] = array(
+    '#type' => 'submit',
+    '#value' => 'Submit',
+    '#attributes' => array('class' => array('btn pull-right')),
+  );
+
+  return $form;
+}
+
+
+/**
+ * FAPI validation hook implementation.
+ *
+ * @param array $form
+ *   Form api array.
+ * @param array $form_state
+ *   Form state array.
+ */
+function techtest_credit_card_form_validate($form, &$form_state) {
+
+  $values = $form_state['values'];
+  switch ($values['select_payment']) {
+    case 'credit':
+      if (empty($values['credit_card_number'])) {
+        form_set_error('credit_card_number', 'Please enter a credit card number.');
+      }
+      if (empty($values['credit_card_cvv'])) {
+        form_set_error('credit_card_cvv', 'Please enter your cvv number.');
+      }
+      break;
+
+    case 'voucher':
+      if (empty($values['voucher_number']) || !is_numeric($values['voucher_number'])) {
+        form_set_error('voucher_number', 'Please enter a valid voucher number.');
+      }
+      else {
+        $result = db_select('techtest_voucher', 'a')
+          ->fields('a')
+          ->condition('voucher_number', trim($values['voucher_number']), '=')
+          ->execute()
+          ->fetchAssoc();
+        if ($result) {
+          form_set_error('voucher_number', 'This voucher has been used before');
+        }
+      }
+
+
+      break;
+  }
+}
+
+/**
+ * FAPI submit hook implementation.
+ *
+ * @param array $form
+ *   Form api array.
+ * @param array $form_state
+ *   Form state array.
+ */
+function techtest_credit_card_form_submit($form, &$form_state) {
+  $values = $form_state['values'];
+  switch ($values['select_payment']) {
+    case 'credit':
+      // Untested! This is just meant to represent some kind of sending to the
+      // payment processor and isn't really useful.
+      $data = array(
+        'number' => $values['credit_card_number'],
+        'cvv' => $values['credit_card_cvv'],
+        'name' => $values['name'],
+      );
+      $options = array(
+        'method' => 'POST',
+        'data' => drupal_http_build_query($data),
+        'timeout' => 15,
+        'headers' => array('Content-Type' => 'application/x-www-form-urlencoded'),
+      );
+      drupal_http_request('localhost', $options);
+      break;
+
+    case 'voucher':
+      // Save the voucher number to the database.
+      $data = array(
+        'voucher_number' => trim($values['voucher_number']),
+        'name' => trim($values['name']),
+      );
+      $query = db_insert('techtest_voucher')
+        ->fields($data)
+        ->execute();
+      break;
+  }
+}
+/**
+ * Element validation function for validating credit card.
+ *
+ * Taken from http://drupal.org/projects/creditfield.
+ * Note: This has been added as creditfield fapi doesn't allow blank fields and
+ * is therefore incompatible with fapi states. In normal circumstances I would
+ * have patched the contrib module and submitted it as an issue.
+ *
+ * @param array $element
+ *   Form api array for credit card element.
+ */
+function techtest_card_cardnumber_validate($element) {
+  if (empty($element['#value'])) {
+    return;
+  }
+  // Strip any non-digits (useful for
+  // credit card numbers with spaces and hyphens)
+  $cardnumber = preg_replace('/\D/', '', $element['#value']);
+
+  if (!is_numeric($cardnumber)) {
+    form_error($element, t('Please enter a valid credit card number.'));
+  }
+
+  // Set the string length and parity.
+  $cardnumber_length = drupal_strlen($cardnumber);
+  $parity = $cardnumber_length % 2;
+
+  // Loop through each digit and do the maths.
+  $total = 0;
+
+  for ($i = 0; $i < $cardnumber_length; $i++) {
+    $digit = $cardnumber[$i];
+    // Multiply alternate digits by two.
+    if ($i % 2 == $parity) {
+      $digit *= 2;
+      // If the sum is two digits, add them together (in effect).
+      if ($digit > 9) {
+        $digit -= 9;
+      }
+    }
+    // Total up the digits.
+    $total += $digit;
+  }
+
+  // If the total mod 10 equals 0, the number is valid.
+  $valid = ($total % 10 == 0) ? TRUE : FALSE;
+
+  if (!$valid) {
+    form_error($element, t('Your card appears to be invalid. Please check the numbers and try again.'));
+  }
+}
+
+/**
+ * Validate callback for credit card cvv number fields.
+ *
+ * @param array $element
+ *   Form api element for the cvv field.
+ */
+function techtest_cvv_validate($element) {
+  if (!is_numeric($element['#value']) && !empty($element['#value'])) {
+    form_error($element, t('Please enter a valid CVV number.'));
+  }
+}
